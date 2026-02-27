@@ -19,7 +19,15 @@ try:
 except ImportError:
     pass  # transformers < 5.0 or bytes_to_unicode not available
 
-from mlx_lm.models.cache import KVCache
+from mlx_lm.models.cache import ArraysCache, KVCache
+
+# Monkey-patch for Qwen3.5 hybrid model compatibility
+# ArraysCache.make_mask() only accepts (N,) but create_attention_mask
+# passes return_array and window_size kwargs — patch to accept and ignore them.
+_original_arrays_cache_make_mask = ArraysCache.make_mask
+def _patched_arrays_cache_make_mask(self, N, **kwargs):
+    return _original_arrays_cache_make_mask(self, N)
+ArraysCache.make_mask = _patched_arrays_cache_make_mask  # type: ignore[assignment]
 from mlx_lm.models.deepseek_v3 import DeepseekV3Model
 from mlx_lm.tokenizer_utils import TokenizerWrapper
 

@@ -191,10 +191,14 @@ class PipelineLastLayer(CustomMlxLayer):
                 # CacheList (used by MLA models like DeepSeekV32, GLM MoE DSA)
                 # doesn't have .keys directly; access via first sub-cache.
                 _cache = cache[0] if hasattr(cache, "caches") else cache  # type: ignore
-                _cache.keys = mx.depends(_cache.keys, output)  # type: ignore
+                # ArraysCache (used by hybrid models like Qwen3.5 with GatedDeltaNet/linear attention)
+                # doesn't have .keys/.values — skip dependency tracking for these.
+                if hasattr(_cache, "keys"):
+                    _cache.keys = mx.depends(_cache.keys, output)  # type: ignore
             mx.eval(output)
             if cache is not None:
-                mx.eval(_cache.keys)  # type: ignore
+                if hasattr(_cache, "keys"):
+                    mx.eval(_cache.keys)  # type: ignore
 
         if not self.is_prefill:
             output = mx.distributed.all_gather(output, group=self.group)[
@@ -347,7 +351,8 @@ def patch_pipeline_model[T](model: T, group: mx.distributed.Group) -> T:
         if cache is not None:
             last = cache[-1]  # type: ignore
             dep_cache = last[0] if hasattr(last, "caches") else last  # type: ignore
-            dep_cache.keys = mx.depends(dep_cache.keys, logits)  # type: ignore
+            if hasattr(dep_cache, "keys"):
+                dep_cache.keys = mx.depends(dep_cache.keys, logits)  # type: ignore
 
         return logits
 
@@ -375,7 +380,8 @@ def patch_tensor_model[T](model: T) -> T:
         if cache is not None and len(cache) > 0:  # pyright: ignore[reportAny]
             last = cache[-1]  # pyright: ignore[reportAny]
             dep_cache = last[0] if hasattr(last, "caches") else last  # pyright: ignore[reportAny]
-            dep_cache.keys = mx.depends(dep_cache.keys, logits)  # pyright: ignore[reportAny,reportUnknownMemberType]
+            if hasattr(dep_cache, "keys"):
+                dep_cache.keys = mx.depends(dep_cache.keys, logits)  # pyright: ignore[reportAny,reportUnknownMemberType]
 
         return logits
 
