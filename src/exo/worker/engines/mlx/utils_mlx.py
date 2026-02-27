@@ -20,10 +20,18 @@ except ImportError:
     pass  # transformers < 5.0 or bytes_to_unicode not available
 
 from mlx_lm.models.cache import ArraysCache, KVCache
+import mlx_lm.models.cache as _mlx_cache
 
 # Monkey-patch for Qwen3.5 hybrid model compatibility
-# ArraysCache.make_mask() only accepts (N,) but create_attention_mask
-# passes return_array and window_size kwargs — patch to accept and ignore them.
+# cache.py's create_attention_mask(N, offset, return_array, window_size) has all
+# positional-only args, but create_ssm_mask calls cache.make_mask(N) which then
+# calls create_attention_mask(N, offset=self.offset) — missing return_array & window_size.
+_original_cache_create_attention_mask = _mlx_cache.create_attention_mask
+def _patched_cache_create_attention_mask(N, offset=0, return_array=False, window_size=None):
+    return _original_cache_create_attention_mask(N, offset, return_array, window_size)
+_mlx_cache.create_attention_mask = _patched_cache_create_attention_mask  # type: ignore[assignment]
+
+# ArraysCache.make_mask() only accepts (N,) but callers may pass extra kwargs.
 _original_arrays_cache_make_mask = ArraysCache.make_mask
 def _patched_arrays_cache_make_mask(self, N, **kwargs):
     return _original_arrays_cache_make_mask(self, N)
